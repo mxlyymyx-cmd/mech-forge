@@ -1,0 +1,9 @@
+# SolidWorks 参数化法兰盘 — 依赖
+
+# ── 核心 ──
+pywin32>=306       # Windows COM API (SolidWorks 驱动) — Windows only
+requests>=2.31     # LLM API 调用
+
+# ── 可选 ──
+# openai>=1.0       # OpenAI SDK 调用 LLM（如用 GPT-4o）
+# pandas>=2.0       # 批量数据处理

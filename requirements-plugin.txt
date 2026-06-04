@@ -1,0 +1,8 @@
+# MechForge API Server — 依赖
+
+# ── API 服务器 ──
+flask>=3.0
+flask-cors>=4.0
+
+# ── HTTP 客户端（供 SolidWorks 插件调用） ──
+requests>=2.31

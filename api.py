@@ -1,0 +1,651 @@
+#!/usr/bin/env python3
+"""
+MechForge API Server — Flask 包装现有设计引擎
+
+插件开发调试时可通过浏览器访问 API。
+生产环境：插件通过 localhost:5757 调用。
+
+启动:
+    python api.py
+"""
+
+import os
+import sys
+import json
+import logging
+import traceback
+from typing import Optional
+
+# 确保可以导入本包
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+# ── 设计引擎导入 ──
+from flange.params import FlangeParams, FlangeType, SealType
+from flange.gb_standards import lookup, list_available, is_supported
+from flange.ai_extractor import extract as flange_extract
+from flange.generator import generate_sw_macro as gen_flange_macro
+
+from impeller.params import ImpellerDesignInput, BladeType
+from impeller.design import design_impeller as design_impeller_engine
+from impeller.generator import (
+    generate_vba_macro as gen_impeller_macro,
+    design_and_generate as impeller_design_and_generate,
+)
+from impeller.volute import match_impeller, volute_profile
+
+from axial.params import AxialFanInput, AirfoilType
+from axial.design import design_axial_fan as design_axial_engine
+from axial.generator import (
+    generate_vba_macro as gen_axial_macro,
+    design_and_generate as axial_design_and_generate,
+)
+
+# ═══════════════════════════════════════════════════════════════
+# Flask App
+# ═══════════════════════════════════════════════════════════════
+
+app = Flask(__name__)
+CORS(app)  # 跨域支持
+
+# 日志配置
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("mechforge")
+
+
+# ═══════════════════════════════════════════════════════════════
+# 通用响应格式
+# ═══════════════════════════════════════════════════════════════
+
+
+def ok(data: dict, status: int = 200):
+    """成功响应"""
+    return jsonify({"success": True, "data": data}), status
+
+
+def fail(error: str, code: str = "ERROR", status: int = 400):
+    """错误响应"""
+    return jsonify({"success": False, "error": error, "code": code}), status
+
+
+def server_error(e: Exception):
+    """服务器内部错误"""
+    log.error(f"Internal error: {e}\n{traceback.format_exc()}")
+    return jsonify({
+        "success": False,
+        "error": str(e),
+        "code": "INTERNAL_ERROR",
+    }), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# 路由
+# ═══════════════════════════════════════════════════════════════
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    """健康检查"""
+    log.info("GET /api/health")
+    return ok({
+        "status": "ok",
+        "version": "1.0.0",
+        "engines": ["flange", "impeller", "axial"],
+    })
+
+
+@app.route("/api/models", methods=["GET"])
+def list_models():
+    """列出支持的零件类型和参数说明"""
+    log.info("GET /api/models")
+    return ok({
+        "models": [
+            {
+                "id": "flange",
+                "name": "法兰盘",
+                "description": "板式平焊/带颈平焊/对焊法兰，国标GB/T 911X-2010系列",
+                "params": {
+                    "dn": {"type": "int", "required": True, "description": "公称通径 (DN10~DN2000)"},
+                    "pn": {"type": "int", "required": True, "description": "公称压力 (PN10, PN16, PN25, PN40)"},
+                    "flange_type": {"type": "str", "default": "plate", "choices": ["plate", "slip_on", "weld_neck", "threaded", "blind"]},
+                    "seal_type": {"type": "str", "default": "rf", "choices": ["rf", "ff", "mfm", "tg", "rj"]},
+                    "material": {"type": "str", "default": "Q235B"},
+                    "n": {"type": "int", "default": 0, "description": "螺栓孔数量（0=自动）"},
+                },
+            },
+            {
+                "id": "impeller",
+                "name": "离心风机叶轮",
+                "description": "前向/后向/径向离心风机叶轮设计，含蜗壳匹配",
+                "params": {
+                    "Q": {"type": "float", "required": True, "description": "流量 (m³/h)"},
+                    "P": {"type": "float", "required": True, "description": "全压 (Pa)"},
+                    "n": {"type": "float", "required": True, "description": "转速 (r/min)"},
+                    "blade_type": {"type": "str", "default": "backward", "choices": ["forward", "backward", "radial", "radial_tip", "airfoil"]},
+                    "material": {"type": "str", "default": "Q235B"},
+                    "volute": {"type": "bool", "default": True, "description": "是否包含蜗壳设计"},
+                },
+            },
+            {
+                "id": "axial",
+                "name": "轴流风机",
+                "description": "轴流风机叶轮设计，支持多种翼型",
+                "params": {
+                    "Q": {"type": "float", "required": True, "description": "流量 (m³/h)"},
+                    "P": {"type": "float", "required": True, "description": "全压 (Pa)"},
+                    "n": {"type": "float", "required": True, "description": "转速 (r/min)"},
+                    "airfoil": {"type": "str", "default": "clark_y", "choices": ["clark_y", "ls_0413", "ls_0409", "raf_30", "raf_38", "naca_4412", "naca_2412"]},
+                    "material": {"type": "str", "default": "Q235B"},
+                    "sections": {"type": "int", "default": 5},
+                },
+            },
+        ],
+    })
+
+
+# ═══════════════════════════════════════════════════════════════
+# NLP — 自然语言 → 结构化参数
+# ═══════════════════════════════════════════════════════════════
+
+
+@app.route("/api/nlp", methods=["POST"])
+def nlp_parse():
+    """
+    自然语言解析
+
+    请求体:
+        {"text": "DN100 PN16 平焊法兰"}
+        {"text": "设计一个离心风机，流量5000m³/h，全压2500Pa，转速1450rpm"}
+        {"text": "轴流风机 Q=20000 P=800 n=1450"}
+
+    返回:
+        {"success": true, "data": {"type": "flange|impeller|axial", "params": {...}}}
+    """
+    data = request.get_json(force=True)
+    text = data.get("text", "").strip()
+
+    if not text:
+        return fail("输入文本不能为空", "EMPTY_INPUT")
+
+    log.info(f"POST /api/nlp  text={text[:100]}")
+
+    # 尝试识别类型
+    text_lower = text.lower()
+
+    # 离心风机关键字
+    is_impeller = any(kw in text_lower for kw in [
+        "离心风机", "叶轮", "fan", "impeller", "离心", "蜗壳",
+    ])
+    # 轴流风机关键字
+    is_axial = any(kw in text_lower for kw in [
+        "轴流", "axial", "轴流风机",
+    ])
+    # 默认视为法兰
+    is_flange = not is_impeller and not is_axial
+
+    try:
+        if is_axial:
+            # 轴流风机 — 用正则提取 Q, P, n
+            params = _extract_fan_params(text)
+            params["type"] = "axial"
+            return ok({
+                "type": "axial",
+                "params": params,
+                "confidence": 0.85,
+            })
+        elif is_impeller:
+            # 离心风机
+            params = _extract_fan_params(text)
+            params["type"] = "impeller"
+            return ok({
+                "type": "impeller",
+                "params": params,
+                "confidence": 0.85,
+            })
+        else:
+            # 法兰 — 用现有 AI 提取器
+            result = flange_extract(text)
+            if not result.success:
+                return fail(result.error, "EXTRACTION_FAILED", 400)
+
+            return ok({
+                "type": "flange",
+                "params": result.params.to_dict(),
+                "confidence": result.confidence,
+                "notes": result.notes,
+            })
+    except Exception as e:
+        return server_error(e)
+
+
+def _extract_fan_params(text: str) -> dict:
+    """
+    从自然语言提取风机参数 Q, P, n
+
+    支持格式:
+        - Q=5000 P=2500 n=1450
+        - 流量5000m³/h 全压2500Pa 转速1450rpm
+        - 5000 m3h 2500 Pa 1450 rpm
+    """
+    import re
+
+    params = {}
+    patterns = [
+        # key=value 格式
+        (r'(?:Q|q|流量)\s*[:=]?\s*(\d+[\.\d]*)', 'Q'),
+        (r'(?:P|p|全压)\s*[:=]?\s*(\d+[\.\d]*)', 'P'),
+        (r'(?:n|转速|rpm)\s*[:=]?\s*(\d+[\.\d]*)', 'n'),
+        # 无 key 纯数字（按 Q,P,n 顺序猜测）
+    ]
+
+    for pattern, key in patterns:
+        m = re.search(pattern, text)
+        if m:
+            params[key] = float(m.group(1))
+
+    # 类型
+    type_match = re.search(r'(前向|forward)', text, re.IGNORECASE)
+    if type_match:
+        params["blade_type"] = "forward"
+    type_match = re.search(r'(后向|backward)', text, re.IGNORECASE)
+    if type_match:
+        params["blade_type"] = "backward"
+    type_match = re.search(r'(径向|radial)', text, re.IGNORECASE)
+    if type_match:
+        params["blade_type"] = "radial"
+
+    # 翼型
+    airfoil_match = re.search(r'(clark.y|clark_y)', text, re.IGNORECASE)
+    if airfoil_match:
+        params["airfoil"] = "clark_y"
+
+    return params
+
+
+# ═══════════════════════════════════════════════════════════════
+# 法兰设计
+# ═══════════════════════════════════════════════════════════════
+
+
+@app.route("/api/design/flange", methods=["POST"])
+def design_flange():
+    """
+    法兰设计计算
+
+    请求体:
+        {"dn": 100, "pn": 16, "flange_type": "plate", "material": "Q235B", "seal_type": "rf"}
+
+    返回:
+        {"success": true, "data": {
+            "params": {...},
+            "summary": "...",
+            "bolt_hole_pattern": {...},
+            "standard": "GB/T 9119-2010"
+        }}
+    """
+    data = request.get_json(force=True)
+    log.info(f"POST /api/design/flange  data={data}")
+
+    try:
+        dn = int(data.get("dn", 0))
+        pn = int(data.get("pn", 0))
+
+        if dn <= 0 or pn <= 0:
+            return fail("DN 和 PN 必须为正整数", "INVALID_PARAMS")
+
+        # 查国标
+        if is_supported(dn, pn):
+            params = lookup(dn, pn)
+        else:
+            return fail(f"DN{dn} PN{pn} 不在国标数据库中", "NOT_SUPPORTED")
+
+        # 覆盖用户参数
+        if data.get("flange_type"):
+            params.flange_type = FlangeType(data["flange_type"])
+        if data.get("seal_type"):
+            params.seal_type = SealType(data["seal_type"])
+        if data.get("material"):
+            params.material = data["material"]
+        if data.get("n"):
+            params.n = int(data["n"])
+
+        return ok({
+            "params": params.to_dict(),
+            "summary": params.summary,
+            "bolt_hole_pattern": params.bolt_hole_pattern,
+            "standard": params.standard,
+        })
+    except ValueError as e:
+        return fail(str(e), "INVALID_PARAMS")
+    except Exception as e:
+        return server_error(e)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 离心风机叶轮设计
+# ═══════════════════════════════════════════════════════════════
+
+
+@app.route("/api/design/impeller", methods=["POST"])
+def design_impeller():
+    """
+    离心风机叶轮设计
+
+    请求体:
+        {"Q": 5000, "P": 2500, "n": 1450, "blade_type": "backward", "material": "Q235B", "volute": true}
+
+    返回:
+        {"success": true, "data": {
+            "design": {...},
+            "summary": "...",
+            "volute": {...} | null
+        }}
+    """
+    data = request.get_json(force=True)
+    log.info(f"POST /api/design/impeller  data={data}")
+
+    try:
+        Q = float(data.get("Q", 0))
+        P = float(data.get("P", 0))
+        n = float(data.get("n", 0))
+
+        if Q <= 0 or P <= 0 or n <= 0:
+            return fail("Q, P, n 必须为正数", "INVALID_PARAMS")
+
+        blade_type = data.get("blade_type", "backward")
+        material = data.get("material", "Q235B")
+
+        inp = ImpellerDesignInput(
+            Q=Q, P=P, n=n,
+            blade_type=blade_type,
+            material=material,
+        )
+        design = design_impeller_engine(inp)
+
+        result = {
+            "design": design.to_dict(),
+            "summary": design.summary,
+            "volute": None,
+        }
+
+        # 蜗壳匹配
+        if data.get("volute", True):
+            try:
+                vol = match_impeller(design)
+                profile = volute_profile(vol)
+                result["volute"] = {
+                    "params": {
+                        "D2": vol.D2, "b2": vol.b2, "B": vol.B, "A": vol.A,
+                        "delta": vol.delta, "r_tongue": vol.r_tongue,
+                        "outlet_w": vol.outlet_w, "outlet_h": vol.outlet_h,
+                        "outlet_v": vol.outlet_v,
+                    },
+                    "summary": vol.summary,
+                    "profile_points": profile[:10],  # 只返回前10个点示意
+                }
+            except Exception as ve:
+                result["volute"] = {"error": str(ve)}
+
+        return ok(result)
+
+    except ValueError as e:
+        return fail(str(e), "DESIGN_ERROR")
+    except Exception as e:
+        return server_error(e)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 轴流风机设计
+# ═══════════════════════════════════════════════════════════════
+
+
+@app.route("/api/design/axial", methods=["POST"])
+def design_axial():
+    """
+    轴流风机设计
+
+    请求体:
+        {"Q": 20000, "P": 800, "n": 1450, "airfoil": "clark_y", "material": "Q235B", "sections": 5}
+
+    返回:
+        {"success": true, "data": {
+            "design": {...},
+            "summary": "...",
+            "sections": [...]
+        }}
+    """
+    data = request.get_json(force=True)
+    log.info(f"POST /api/design/axial  data={data}")
+
+    try:
+        Q = float(data.get("Q", 0))
+        P = float(data.get("P", 0))
+        n = float(data.get("n", 0))
+
+        if Q <= 0 or P <= 0 or n <= 0:
+            return fail("Q, P, n 必须为正数", "INVALID_PARAMS")
+
+        airfoil = data.get("airfoil", "clark_y")
+        material = data.get("material", "Q235B")
+        sections = int(data.get("sections", 5))
+
+        inp = AxialFanInput(
+            Q=Q, P=P, n=n,
+            airfoil=airfoil,
+            material=material,
+            sections=sections,
+        )
+        design = design_axial_engine(inp)
+
+        result = {
+            "design": design.to_dict(),
+            "summary": design.summary,
+            "sections": [s.to_dict() for s in design.sections],
+        }
+
+        return ok(result)
+
+    except ValueError as e:
+        return fail(str(e), "DESIGN_ERROR")
+    except Exception as e:
+        return server_error(e)
+
+
+# ═══════════════════════════════════════════════════════════════
+# VBA 宏代码生成
+# ═══════════════════════════════════════════════════════════════
+
+
+# In-memory task store
+_macro_tasks: dict = {}
+_next_task_id: int = 0
+
+
+@app.route("/api/macro", methods=["POST"])
+def generate_macro():
+    """
+    生成 VBA 宏代码
+
+    请求体:
+        {"type": "flange", "params": {"dn": 100, "pn": 16, ...}}
+        {"type": "impeller", "params": {"Q": 5000, "P": 2500, "n": 1450, ...}}
+        {"type": "axial", "params": {"Q": 20000, "P": 800, "n": 1450, ...}}
+
+    返回:
+        {"success": true, "data": {"task_id": "1", "macro": "...", "name": "...", "lines": 123}}
+    """
+    global _next_task_id
+
+    data = request.get_json(force=True)
+    log.info(f"POST /api/macro  type={data.get('type')}")
+
+    try:
+        macro_type = data.get("type", "")
+        params = data.get("params", {})
+
+        if macro_type == "flange":
+            dn = int(params.get("dn", 0))
+            pn = int(params.get("pn", 0))
+            if dn <= 0 or pn <= 0:
+                return fail("法兰需要 dn 和 pn 参数", "INVALID_PARAMS")
+
+            if is_supported(dn, pn):
+                fp = lookup(dn, pn)
+            else:
+                return fail(f"DN{dn} PN{pn} 不在数据库中", "NOT_SUPPORTED")
+
+            if params.get("flange_type"):
+                fp.flange_type = FlangeType(params["flange_type"])
+            if params.get("material"):
+                fp.material = params["material"]
+
+            macro = gen_flange_macro(fp)
+            name = f"Flange_DN{dn}_PN{pn}_{fp.flange_type.value}"
+
+        elif macro_type == "impeller":
+            Q = float(params.get("Q", 0))
+            P = float(params.get("P", 0))
+            n = float(params.get("n", 0))
+            if Q <= 0 or P <= 0 or n <= 0:
+                return fail("叶轮需要 Q, P, n 参数", "INVALID_PARAMS")
+
+            blade_type = params.get("blade_type", "backward")
+            material = params.get("material", "Q235B")
+            inp = ImpellerDesignInput(Q=Q, P=P, n=n, blade_type=blade_type, material=material)
+            design = design_impeller_engine(inp)
+            macro = gen_impeller_macro(design)
+            name = f"Impeller_Q{Q:.0f}_P{P:.0f}_n{n:.0f}"
+
+            # 如需蜗壳宏，可额外生成
+            volute_macro = None
+            if params.get("volute", True):
+                try:
+                    vol = match_impeller(design)
+                    profile = volute_profile(vol)
+                    from impeller.volute import generate_vba_macro as gen_vol_macro
+                    volute_macro = gen_vol_macro(vol, profile)
+                except Exception:
+                    volute_macro = None
+
+        elif macro_type == "axial":
+            Q = float(params.get("Q", 0))
+            P = float(params.get("P", 0))
+            n = float(params.get("n", 0))
+            if Q <= 0 or P <= 0 or n <= 0:
+                return fail("轴流风机需要 Q, P, n 参数", "INVALID_PARAMS")
+
+            airfoil = params.get("airfoil", "clark_y")
+            material = params.get("material", "Q235B")
+            sections = int(params.get("sections", 5))
+            inp = AxialFanInput(Q=Q, P=P, n=n, airfoil=airfoil, material=material, sections=sections)
+            design = design_axial_engine(inp)
+            macro = gen_axial_macro(design)
+            name = f"Axial_Q{Q:.0f}_P{P:.0f}_n{n:.0f}"
+
+        else:
+            return fail(f"不支持的零件类型: {macro_type}", "UNSUPPORTED_TYPE")
+
+        _next_task_id += 1
+        task_id = str(_next_task_id)
+        _macro_tasks[task_id] = {
+            "name": name,
+            "macro": macro,
+            "type": macro_type,
+        }
+
+        resp_data = {
+            "task_id": task_id,
+            "name": name,
+            "macro": macro,
+            "lines": macro.count("\n") + 1,
+        }
+
+        # 附带蜗壳宏
+        if macro_type == "impeller" and volute_macro:
+            _next_task_id += 1
+            vol_task_id = str(_next_task_id)
+            vol_name = f"{name}_volute"
+            _macro_tasks[vol_task_id] = {
+                "name": vol_name,
+                "macro": volute_macro,
+                "type": "volute",
+            }
+            resp_data["volute_task_id"] = vol_task_id
+            resp_data["volute_name"] = vol_name
+            resp_data["volute_lines"] = volute_macro.count("\n") + 1
+
+        return ok(resp_data)
+
+    except ValueError as e:
+        return fail(str(e), "INVALID_PARAMS")
+    except Exception as e:
+        return server_error(e)
+
+
+@app.route("/api/macro/<task_id>", methods=["GET"])
+def get_macro(task_id: str):
+    """查看生成的宏"""
+    task = _macro_tasks.get(task_id)
+    if not task:
+        return fail(f"任务 {task_id} 不存在", "NOT_FOUND", 404)
+
+    return ok({
+        "task_id": task_id,
+        "name": task["name"],
+        "type": task["type"],
+        "macro": task["macro"],
+        "lines": task["macro"].count("\n") + 1,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════
+# 启动
+# ═══════════════════════════════════════════════════════════════
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="MechForge API Server")
+    parser.add_argument("--host", default="127.0.0.1", help="监听地址 (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=5757, help="监听端口 (default: 5757)")
+    parser.add_argument("--debug", action="store_true", help="Debug 模式")
+    args = parser.parse_args()
+
+    print(f"""
+{'='*55}
+  MechForge API Server 🏭
+  {'='*55}
+
+  API Base:  http://{args.host}:{args.port}/api
+
+  Endpoints:
+    GET  /api/health          — 健康检查
+    GET  /api/models          — 支持的零件类型
+    POST /api/nlp             — 自然语言 → 结构化参数
+    POST /api/design/flange   — 法兰设计计算
+    POST /api/design/impeller — 离心风机叶轮设计
+    POST /api/design/axial    — 轴流风机设计
+    POST /api/macro           — 生成 VBA 宏代码
+    GET  /api/macro/<id>      — 查看生成的宏
+
+  Press Ctrl+C to stop.
+{'='*55}
+""")
+
+    app.run(
+        host=args.host,
+        port=args.port,
+        debug=args.debug,
+        use_reloader=False,  # 避免热重载打扰 SolidWorks 插件
+    )
+
+
+if __name__ == "__main__":
+    main()

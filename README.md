@@ -100,15 +100,23 @@ C# SolidWorks Add-in，与 API 服务通信：
 
 ## 安装
 
-### 仅使用 CLI（Linux/Mac/Windows）
+### Windows 预编译版（推荐）
+从 [Actions 页面](https://github.com/mxlyymyx-cmd/mech-forge/actions) 下载 `MechForge-win64.zip`：
+1. 下载解压
+2. 打开命令行到目录
+3. 直接运行：`MechForge.exe query DN100 PN16`
 
+**不需要安装 Python，解压即用。**
+
+### 源码运行（Linux/Mac/Windows）
 ```bash
+git clone https://github.com/mxlyymyx-cmd/mech-forge.git
+cd mech-forge
 pip install -r requirements.txt
 python main.py --help
 ```
 
 ### 使用 SolidWorks 插件（Windows only）
-
 ```bash
 pip install -r requirements-plugin.txt
 python api.py --port 5757 &

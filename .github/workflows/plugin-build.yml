@@ -1,0 +1,55 @@
+# MechForge — SolidWorks 插件自动编译打包
+# 需要将 SolidWorks Interop DLL 放入 plugin/libs/ 目录
+name: Build Plugin
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "plugin/**"
+      - ".github/workflows/plugin-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🛠 安装 Visual Studio Build Tools
+        uses: microsoft/setup-msbuild@v2
+
+      - name: 🔨 编译 C# 插件
+        working-directory: plugin
+        run: |
+          if (Test-Path "libs/SolidWorks.Interop.sldworks.dll") {
+            echo "✅ SolidWorks Interop DLL 已就绪，开始编译..."
+            msbuild MechForgeAddin.csproj /p:Configuration=Release /p:Platform=x64
+            echo "✅ 编译完成"
+          } else {
+            echo "⚠️ 未找到 SolidWorks Interop DLL (plugin/libs/)"
+            echo "请从 SolidWorks 安装目录复制以下文件到 plugin/libs/:"
+            echo "  C:\Program Files\SolidWorks Corp\SolidWorks\api\redist\"
+            echo "  - SolidWorks.Interop.sldworks.dll"
+            echo "  - SolidWorks.Interop.swcommands.dll"
+            echo "  - SolidWorks.Interop.swconst.dll"
+            echo "  - SolidWorks.Interop.swpublished.dll"
+            exit 1
+          }
+
+      - name: 📦 打包插件 ZIP
+        run: |
+          mkdir MechForge-Plugin-v1.0
+          copy plugin\bin\x64\Release\MechForgeAddin.dll MechForge-Plugin-v1.0\
+          copy plugin\install.ps1 MechForge-Plugin-v1.0\
+          copy plugin\README-install.md MechForge-Plugin-v1.0\
+          tar -acf MechForge-Plugin-win64.zip MechForge-Plugin-v1.0\
+
+      - name: 📤 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: MechForge-Plugin-win64
+          path: MechForge-Plugin-win64.zip
+          if-no-files-found: error

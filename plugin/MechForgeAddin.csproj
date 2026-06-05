@@ -39,27 +39,58 @@
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Web.Extensions" />
 
-    <!-- SolidWorks Interop 库（Copy Local=False） -->
-    <Reference Include="SolidWorks.Interop.sldworks">
-      <HintPath>C:\Program Files\SolidWorks Corp\SolidWorks\api\redist\SolidWorks.Interop.sldworks.dll</HintPath>
-      <EmbedInteropTypes>False</EmbedInteropTypes>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="SolidWorks.Interop.swcommands">
-      <HintPath>C:\Program Files\SolidWorks Corp\SolidWorks\api\redist\SolidWorks.Interop.swcommands.dll</HintPath>
-      <EmbedInteropTypes>False</EmbedInteropTypes>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="SolidWorks.Interop.swconst">
-      <HintPath>C:\Program Files\SolidWorks Corp\SolidWorks\api\redist\SolidWorks.Interop.swconst.dll</HintPath>
-      <EmbedInteropTypes>False</EmbedInteropTypes>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="SolidWorks.Interop.swpublished">
-      <HintPath>C:\Program Files\SolidWorks Corp\SolidWorks\api\redist\SolidWorks.Interop.swpublished.dll</HintPath>
-      <EmbedInteropTypes>False</EmbedInteropTypes>
-      <Private>False</Private>
-    </Reference>
+    <!-- SolidWorks Interop 库 -->
+    <!-- 优先使用 libs/ 目录（CI 自动构建），找不到则用 SolidWorks 安装路径 -->
+    <Choose>
+      <When Condition="Exists('$(MSBuildProjectDirectory)\libs\SolidWorks.Interop.sldworks.dll')">
+        <ItemGroup>
+          <Reference Include="SolidWorks.Interop.sldworks">
+            <HintPath>$(MSBuildProjectDirectory)\libs\SolidWorks.Interop.sldworks.dll</HintPath>
+            <EmbedInteropTypes>False</EmbedInteropTypes>
+            <Private>False</Private>
+          </Reference>
+          <Reference Include="SolidWorks.Interop.swcommands">
+            <HintPath>$(MSBuildProjectDirectory)\libs\SolidWorks.Interop.swcommands.dll</HintPath>
+            <EmbedInteropTypes>False</EmbedInteropTypes>
+            <Private>False</Private>
+          </Reference>
+          <Reference Include="SolidWorks.Interop.swconst">
+            <HintPath>$(MSBuildProjectDirectory)\libs\SolidWorks.Interop.swconst.dll</HintPath>
+            <EmbedInteropTypes>False</EmbedInteropTypes>
+            <Private>False</Private>
+          </Reference>
+          <Reference Include="SolidWorks.Interop.swpublished">
+            <HintPath>$(MSBuildProjectDirectory)\libs\SolidWorks.Interop.swpublished.dll</HintPath>
+            <EmbedInteropTypes>False</EmbedInteropTypes>
+            <Private>False</Private>
+          </Reference>
+        </ItemGroup>
+      </When>
+      <Otherwise>
+        <ItemGroup>
+          <Reference Include="SolidWorks.Interop.sldworks">
+            <HintPath>C:\Program Files\SolidWorks Corp\SolidWorks\api\redist\SolidWorks.Interop.sldworks.dll</HintPath>
+            <EmbedInteropTypes>False</EmbedInteropTypes>
+            <Private>False</Private>
+          </Reference>
+          <Reference Include="SolidWorks.Interop.swcommands">
+            <HintPath>C:\Program Files\SolidWorks Corp\SolidWorks\api\redist\SolidWorks.Interop.swcommands.dll</HintPath>
+            <EmbedInteropTypes>False</EmbedInteropTypes>
+            <Private>False</Private>
+          </Reference>
+          <Reference Include="SolidWorks.Interop.swconst">
+            <HintPath>C:\Program Files\SolidWorks Corp\SolidWorks\api\redist\SolidWorks.Interop.swconst.dll</HintPath>
+            <EmbedInteropTypes>False</EmbedInteropTypes>
+            <Private>False</Private>
+          </Reference>
+          <Reference Include="SolidWorks.Interop.swpublished">
+            <HintPath>C:\Program Files\SolidWorks Corp\SolidWorks\api\redist\SolidWorks.Interop.swpublished.dll</HintPath>
+            <EmbedInteropTypes>False</EmbedInteropTypes>
+            <Private>False</Private>
+          </Reference>
+        </ItemGroup>
+      </Otherwise>
+    </Choose>
   </ItemGroup>
 
   <ItemGroup>

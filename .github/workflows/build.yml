@@ -30,11 +30,12 @@ jobs:
           pyinstaller --noconfirm build/mech_forge.spec
 
       - name: 📦 压缩为 ZIP
+        shell: pwsh
         run: |
-          mkdir MechForge-v1.0
-          copy dist\MechForge.exe MechForge-v1.0\
-          copy README.md MechForge-v1.0\
-          tar -acf MechForge-win64.zip MechForge-v1.0\
+          New-Item -ItemType Directory -Force -Path MechForge-v1.0
+          Copy-Item dist\MechForge.exe -Destination MechForge-v1.0\
+          Copy-Item README.md -Destination MechForge-v1.0\
+          Compress-Archive -Path MechForge-v1.0\* -DestinationPath MechForge-win64.zip -Force
 
       - name: 📤 上传构建产物
         uses: actions/upload-artifact@v4

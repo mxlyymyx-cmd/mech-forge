@@ -1,0 +1,44 @@
+# MechForge — GitHub Actions 自动打包
+# 每次 push 到 main 分支，自动编译 MechForge.exe
+name: Build MechForge
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🐍 安装 Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 📦 安装依赖
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 🔨 打包 MechForge.exe
+        run: |
+          pyinstaller --noconfirm build/mech_forge.spec
+
+      - name: 📦 压缩为 ZIP
+        run: |
+          mkdir MechForge-v1.0
+          copy dist\MechForge.exe MechForge-v1.0\
+          copy README.md MechForge-v1.0\
+          tar -acf MechForge-win64.zip MechForge-v1.0\
+
+      - name: 📤 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: MechForge-win64
+          path: MechForge-win64.zip
+          if-no-files-found: error

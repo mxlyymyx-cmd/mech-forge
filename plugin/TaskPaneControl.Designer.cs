@@ -13,9 +13,12 @@ namespace MechForge
         private System.Windows.Forms.TabPage tabAi;
         private System.Windows.Forms.TabPage tabManual;
 
-        // ── AI 模式 ──
-        private System.Windows.Forms.TextBox txtAiInput;
-        private System.Windows.Forms.Button btnAiGenerate;
+        // ── AI 对话 ──
+        private System.Windows.Forms.RichTextBox txtChatLog;
+        private System.Windows.Forms.TextBox txtChatInput;
+        private System.Windows.Forms.Button btnChatSend;
+        private System.Windows.Forms.Button btnChatSettings;
+        private System.Windows.Forms.Button btnChatClear;
 
         // ── 手动模式 ──
         private System.Windows.Forms.ComboBox cmbPartType;
@@ -72,8 +75,11 @@ namespace MechForge
             this.tabControl1 = new System.Windows.Forms.TabControl();
             this.tabAi = new System.Windows.Forms.TabPage();
             this.tabManual = new System.Windows.Forms.TabPage();
-            this.txtAiInput = new System.Windows.Forms.TextBox();
-            this.btnAiGenerate = new System.Windows.Forms.Button();
+            this.txtChatLog = new System.Windows.Forms.RichTextBox();
+            this.txtChatInput = new System.Windows.Forms.TextBox();
+            this.btnChatSend = new System.Windows.Forms.Button();
+            this.btnChatSettings = new System.Windows.Forms.Button();
+            this.btnChatClear = new System.Windows.Forms.Button();
             this.cmbPartType = new System.Windows.Forms.ComboBox();
             this.lblPartType = new System.Windows.Forms.Label();
             this.pnlFlangeParams = new System.Windows.Forms.Panel();
@@ -151,39 +157,87 @@ namespace MechForge
             this.tabControl1.TabIndex = 1;
 
             // 
-            // tabAi — AI 模式
+            // tabAi — AI 对话
             // 
-            this.tabAi.Controls.Add(this.txtAiInput);
-            this.tabAi.Controls.Add(this.btnAiGenerate);
+            this.tabAi.Controls.Add(this.txtChatLog);
+            this.tabAi.Controls.Add(this.txtChatInput);
+            this.tabAi.Controls.Add(this.btnChatClear);
+            this.tabAi.Controls.Add(this.btnChatSettings);
+            this.tabAi.Controls.Add(this.btnChatSend);
             this.tabAi.Location = new System.Drawing.Point(4, 22);
             this.tabAi.Name = "tabAi";
-            this.tabAi.Padding = new System.Windows.Forms.Padding(10);
+            this.tabAi.Padding = new System.Windows.Forms.Padding(6);
             this.tabAi.Size = new System.Drawing.Size(312, 234);
-            this.tabAi.Text = "AI 模式 ✨";
+            this.tabAi.Text = "AI 对话 💬";
 
-            this.txtAiInput.AcceptsReturn = true;
-            this.txtAiInput.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
-            this.txtAiInput.Font = new System.Drawing.Font("Microsoft YaHei", 10F);
-            this.txtAiInput.Location = new System.Drawing.Point(10, 10);
-            this.txtAiInput.Multiline = true;
-            this.txtAiInput.Name = "txtAiInput";
-            this.txtAiInput.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-            this.txtAiInput.Size = new System.Drawing.Size(292, 120);
-            this.txtAiInput.TabIndex = 0;
-            this.txtAiInput.Text = "DN100 PN16 平焊法兰";
+            // txtChatLog — 聊天记录
+            this.txtChatLog = new System.Windows.Forms.RichTextBox();
+            this.txtChatLog.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
+            this.txtChatLog.BackColor = System.Drawing.Color.FromArgb(30, 30, 30);
+            this.txtChatLog.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.txtChatLog.Font = new System.Drawing.Font("Microsoft YaHei", 9F);
+            this.txtChatLog.ForeColor = System.Drawing.Color.LightGray;
+            this.txtChatLog.Location = new System.Drawing.Point(6, 6);
+            this.txtChatLog.Name = "txtChatLog";
+            this.txtChatLog.ReadOnly = true;
+            this.txtChatLog.ScrollBars = System.Windows.Forms.RichTextBoxScrollBars.Vertical;
+            this.txtChatLog.Size = new System.Drawing.Size(296, 144);
+            this.txtChatLog.TabIndex = 0;
+            this.txtChatLog.Text = "";
 
-            this.btnAiGenerate.Anchor = System.Windows.Forms.AnchorStyles.Top;
-            this.btnAiGenerate.BackColor = System.Drawing.Color.FromArgb(0, 120, 212);
-            this.btnAiGenerate.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnAiGenerate.Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold);
-            this.btnAiGenerate.ForeColor = System.Drawing.Color.White;
-            this.btnAiGenerate.Location = new System.Drawing.Point(76, 145);
-            this.btnAiGenerate.Name = "btnAiGenerate";
-            this.btnAiGenerate.Size = new System.Drawing.Size(160, 40);
-            this.btnAiGenerate.TabIndex = 1;
-            this.btnAiGenerate.Text = "🎯  生成";
-            this.btnAiGenerate.UseVisualStyleBackColor = false;
-            this.btnAiGenerate.Click += new System.EventHandler(this.BtnAiGenerate_Click);
+            // txtChatInput — 输入框
+            this.txtChatInput = new System.Windows.Forms.TextBox();
+            this.txtChatInput.AcceptsReturn = true;
+            this.txtChatInput.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
+            this.txtChatInput.Font = new System.Drawing.Font("Microsoft YaHei", 10F);
+            this.txtChatInput.Location = new System.Drawing.Point(6, 156);
+            this.txtChatInput.Multiline = true;
+            this.txtChatInput.Name = "txtChatInput";
+            this.txtChatInput.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
+            this.txtChatInput.Size = new System.Drawing.Size(296, 42);
+            this.txtChatInput.TabIndex = 1;
+            this.txtChatInput.Text = "设计一台离心风机 Q=5000 P=2500 n=1450";
+            this.txtChatInput.KeyDown += new System.Windows.Forms.KeyEventHandler(this.TxtChatInput_KeyDown);
+
+            // btnChatSend — 发送
+            this.btnChatSend = new System.Windows.Forms.Button();
+            this.btnChatSend.BackColor = System.Drawing.Color.FromArgb(0, 120, 212);
+            this.btnChatSend.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnChatSend.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Bold);
+            this.btnChatSend.ForeColor = System.Drawing.Color.White;
+            this.btnChatSend.Location = new System.Drawing.Point(215, 204);
+            this.btnChatSend.Name = "btnChatSend";
+            this.btnChatSend.Size = new System.Drawing.Size(87, 26);
+            this.btnChatSend.TabIndex = 2;
+            this.btnChatSend.Text = "🚀 发送";
+            this.btnChatSend.UseVisualStyleBackColor = false;
+            this.btnChatSend.Click += new System.EventHandler(this.BtnChatSend_Click);
+
+            // btnChatSettings — 设置
+            this.btnChatSettings = new System.Windows.Forms.Button();
+            this.btnChatSettings.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnChatSettings.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.btnChatSettings.ForeColor = System.Drawing.Color.LightGray;
+            this.btnChatSettings.Location = new System.Drawing.Point(6, 204);
+            this.btnChatSettings.Name = "btnChatSettings";
+            this.btnChatSettings.Size = new System.Drawing.Size(75, 26);
+            this.btnChatSettings.TabIndex = 3;
+            this.btnChatSettings.Text = "⚙ 设置";
+            this.btnChatSettings.UseVisualStyleBackColor = true;
+            this.btnChatSettings.Click += new System.EventHandler(this.BtnChatSettings_Click);
+
+            // btnChatClear — 清空
+            this.btnChatClear = new System.Windows.Forms.Button();
+            this.btnChatClear.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnChatClear.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.btnChatClear.ForeColor = System.Drawing.Color.LightGray;
+            this.btnChatClear.Location = new System.Drawing.Point(87, 204);
+            this.btnChatClear.Name = "btnChatClear";
+            this.btnChatClear.Size = new System.Drawing.Size(60, 26);
+            this.btnChatClear.TabIndex = 4;
+            this.btnChatClear.Text = "🗑 清空";
+            this.btnChatClear.UseVisualStyleBackColor = true;
+            this.btnChatClear.Click += new System.EventHandler(this.BtnChatClear_Click);
 
             // 
             // tabManual — 手动模式

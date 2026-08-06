@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -10,7 +12,8 @@ namespace MechForge
     /// 
     /// 包含：
     /// - 顶部 Logo + 标题
-    /// - AI 模式 / 手动模式 Tab 切换
+    /// - AI 对话 Tab（多轮对话 → 自动建模）
+    /// - 手动模式 Tab
     /// - 日志输出框
     /// - 底部状态栏
     /// </summary>
@@ -19,6 +22,8 @@ namespace MechForge
         #region 字段
 
         private readonly ApiClient _apiClient;
+        private readonly List<Dictionary<string, string>> _chatHistory =
+            new List<Dictionary<string, string>>();
 
         #endregion
 
@@ -32,89 +37,194 @@ namespace MechForge
             InitializeComponent();
             _apiClient = new ApiClient("http://127.0.0.1:5757");
 
-            // 默认选中 AI 模式
+            // 默认选中 AI 对话
             tabControl1.SelectedIndex = 0;
 
             // 启动时检查后端健康状态
             _ = CheckBackendHealthAsync();
+
+            // 欢迎消息
+            AppendChat("🤖 我是 MechForge AI，直接告诉我你的设计需求，比如：\n" +
+                       "\"设计一台离心风机 Q=5000 P=2500 n=1450\"\n" +
+                       "\"DN100 PN16 平焊法兰\"", Color.FromArgb(144, 238, 144));
         }
 
         #endregion
 
-        #region 事件处理
+        #region AI 对话
 
         /// <summary>
-        /// 「AI 模式」生成按钮点击。
+        /// 发送按钮点击。
         /// </summary>
-        private async void BtnAiGenerate_Click(object sender, EventArgs e)
+        private async void BtnChatSend_Click(object sender, EventArgs e)
         {
-            string userInput = txtAiInput.Text.Trim();
+            string userInput = txtChatInput.Text.Trim();
             if (string.IsNullOrEmpty(userInput))
             {
-                AppendLog("⚠️ 请输入设计需求", Color.Orange);
+                AppendChat("⚠️ 请输入设计需求", Color.Orange);
                 return;
             }
 
-            btnAiGenerate.Enabled = false;
-            AppendLog($"🤖 AI 解析: {userInput}", Color.Gray);
+            // 清空输入框
+            txtChatInput.Clear();
+
+            // 显示用户消息
+            AppendChat($"🧑 {userInput}", Color.FromArgb(135, 206, 250));
+
+            // 加入历史
+            _chatHistory.Add(new Dictionary<string, string>
+            {
+                { "role", "user" },
+                { "content", userInput }
+            });
+
+            btnChatSend.Enabled = false;
+            btnChatSend.Text = "⏳ 思考中…";
 
             try
             {
-                // Step 1: NLP 解析
-                var nlpResult = await _apiClient.NlpParseAsync(userInput);
-                if (!nlpResult.IsSuccess)
+                // 调用 AI 聊天接口（携带完整历史，支持多轮追问）
+                var chatResult = await _apiClient.ChatAsync(_chatHistory);
+                if (!chatResult.IsSuccess)
                 {
-                    AppendLog($"❌ NLP 解析失败: {nlpResult.Error}", Color.Red);
+                    AppendChat($"❌ {chatResult.Error}", Color.Red);
+                    AppendChat("   请确认后端已启动: python api.py --port 5757", Color.Gray);
                     return;
                 }
 
-                string partType = nlpResult.Data?.GetValue("type")?.ToString() ?? "";
-                AppendLog($"✅ 识别类型: {partType}", Color.Green);
+                string reply = chatResult.Data?.GetValue("reply")?.ToString() ?? "";
+                string action = chatResult.Data?.GetValue("action")?.ToString() ?? "chat";
+                string macro = chatResult.Data?.GetValue("macro")?.ToString() ?? "";
+                string extraMacro = chatResult.Data?.GetValue("extra_macro")?.ToString() ?? "";
+                string extraName = chatResult.Data?.GetValue("extra_name")?.ToString() ?? "";
+                bool llmUsed = false;
+                try { llmUsed = Convert.ToBoolean(chatResult.Data?.GetValue("llm")); } catch { }
 
-                // Step 2: 设计计算
-                AppendLog($"🔧 正在进行设计计算...", Color.Blue);
-                object designParams = nlpResult.Data?["params"];
+                // 显示 AI 回复
+                AppendChat($"🤖 {reply}", llmUsed ? Color.FromArgb(144, 238, 144) : Color.LightGray);
 
-                var designResult = await _apiClient.DesignAsync(partType, designParams);
-                if (!designResult.IsSuccess)
+                // AI 回复加入历史（多轮上下文）
+                _chatHistory.Add(new Dictionary<string, string>
                 {
-                    AppendLog($"❌ 设计失败: {designResult.Error}", Color.Red);
-                    return;
-                }
+                    { "role", "assistant" },
+                    { "content", reply }
+                });
 
-                // 显示设计摘要
-                string summary = designResult.Data?.GetValue("summary")?.ToString() ?? "";
-                if (!string.IsNullOrEmpty(summary))
+                // 若为建模指令 → 自动在 SolidWorks 中建模
+                if (action == "build" && !string.IsNullOrEmpty(macro))
                 {
-                    AppendLog($"📐 设计结果:\n{summary}", Color.Black);
-                }
+                    await Task.Delay(300);
+                    bool built = SwApiHelper.RunMacro(macro);
+                    AppendChat(built
+                        ? "✅ 模型已自动生成！可在 SolidWorks 中查看。"
+                        : "⚠️ 宏已生成但执行失败，请在日志中查看原因（可能需调低宏安全性）",
+                        built ? Color.FromArgb(144, 238, 144) : Color.Orange);
 
-                // Step 3: 生成 VBA 宏
-                AppendLog($"📜 正在生成 VBA 宏...", Color.Blue);
-                var macroResult = await _apiClient.GenerateMacroAsync(partType, designParams);
-                if (macroResult.IsSuccess)
-                {
-                    string macroName = macroResult.Data?.GetValue("name")?.ToString() ?? "Unknown";
-                    int? lines = (int?)macroResult.Data?.GetValue("lines");
-                    AppendLog($"✅ VBA 宏生成: {macroName} ({lines ?? 0} 行)", Color.Green);
-
-                    // 提示用户可以运行宏
-                    AppendLog("  在 SolidWorks 中: 工具 → 宏 → 运行 → 选择 .bas 文件", Color.Gray);
-                }
-                else
-                {
-                    AppendLog($"⚠️ 宏生成失败: {macroResult.Error}", Color.Orange);
+                    // 蜗壳宏（叶轮时附带）
+                    if (!string.IsNullOrEmpty(extraMacro))
+                    {
+                        await Task.Delay(200);
+                        bool builtVolute = SwApiHelper.RunMacro(extraMacro);
+                        AppendChat(builtVolute
+                            ? $"✅ 蜗壳模型已自动生成！"
+                            : $"⚠️ 蜗壳宏执行失败 ({extraName})",
+                            builtVolute ? Color.FromArgb(144, 238, 144) : Color.Orange);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                AppendLog($"❌ 错误: {ex.Message}", Color.Red);
+                AppendChat($"❌ 错误: {ex.Message}", Color.Red);
             }
             finally
             {
-                btnAiGenerate.Enabled = true;
+                btnChatSend.Enabled = true;
+                btnChatSend.Text = "🚀 发送";
+                txtChatInput.Focus();
             }
         }
+
+        /// <summary>
+        /// 输入框回车发送（Ctrl+Enter 换行）。
+        /// </summary>
+        private void TxtChatInput_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter && !e.Control && !e.Shift)
+            {
+                e.SuppressKeyPress = true;
+                BtnChatSend_Click(sender, e);
+            }
+        }
+
+        /// <summary>
+        /// 清空对话。
+        /// </summary>
+        private void BtnChatClear_Click(object sender, EventArgs e)
+        {
+            _chatHistory.Clear();
+            txtChatLog.Clear();
+            AppendChat("🗑 对话已清空，开始新一轮设计吧！", Color.Gray);
+        }
+
+        /// <summary>
+        /// 打开设置：配置 LLM API Key。
+        /// </summary>
+        private async void BtnChatSettings_Click(object sender, EventArgs e)
+        {
+            using (var dlg = new SettingsDialog())
+            {
+                // 预填当前配置
+                try
+                {
+                    var cfg = await _apiClient.GetChatConfigAsync();
+                    if (cfg.IsSuccess)
+                    {
+                        dlg.ApiUrl = cfg.Data?.GetValue("api_url")?.ToString() ?? "";
+                        dlg.Model = cfg.Data?.GetValue("model")?.ToString() ?? "";
+                    }
+                }
+                catch { }
+
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    SaveSettings(dlg.ApiKey, dlg.ApiUrl, dlg.Model);
+                    AppendChat("⚙ 设置已保存！重新发送消息即可使用 AI 对话。", Color.Orange);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 保存设置到 %APPDATA%\MechForge\config.json。
+        /// </summary>
+        private static void SaveSettings(string apiKey, string apiUrl, string model)
+        {
+            try
+            {
+                string dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "MechForge");
+                Directory.CreateDirectory(dir);
+
+                string path = Path.Combine(dir, "config.json");
+                var cfg = new System.Collections.Generic.Dictionary<string, string>
+                {
+                    { "llm_api_key", apiKey ?? "" },
+                    { "llm_api_url", string.IsNullOrEmpty(apiUrl) ? "https://api.deepseek.com/v1/chat/completions" : apiUrl },
+                    { "llm_model", string.IsNullOrEmpty(model) ? "deepseek-chat" : model }
+                };
+                string json = new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(cfg);
+                File.WriteAllText(path, json, System.Text.Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"保存设置失败: {ex.Message}", "MechForge",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        #endregion
+
+        #region 手动模式
 
         /// <summary>
         /// 「手动模式」生成按钮点击。
@@ -227,6 +337,28 @@ namespace MechForge
         {
             string selected = cmbPartType.SelectedItem?.ToString() ?? "";
             UpdateParameterPanel(selected);
+        }
+
+        #endregion
+
+        #region AI 对话辅助
+
+        /// <summary>
+        /// 在聊天记录框追加消息，支持颜色。
+        /// </summary>
+        private void AppendChat(string text, Color color)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => AppendChat(text, color)));
+                return;
+            }
+
+            txtChatLog.SelectionStart = txtChatLog.TextLength;
+            txtChatLog.SelectionLength = 0;
+            txtChatLog.SelectionColor = color;
+            txtChatLog.AppendText(text + "\n\n");
+            txtChatLog.ScrollToCaret();
         }
 
         #endregion

@@ -69,6 +69,23 @@ namespace MechForge
         #region API 方法
 
         /// <summary>
+        /// AI 多轮对话 — POST /api/chat
+        /// </summary>
+        /// <param name="messages">对话历史 [{"role":"user|assistant","content":"..."}]</param>
+        public async Task<ApiResult> ChatAsync(object messages)
+        {
+            return await PostAsync("/api/chat", new { messages });
+        }
+
+        /// <summary>
+        /// 查询 LLM 配置状态 — GET /api/chat/config
+        /// </summary>
+        public async Task<ApiResult> GetChatConfigAsync()
+        {
+            return await GetAsync("/api/chat/config");
+        }
+
+        /// <summary>
         /// 健康检查 — GET /api/health
         /// </summary>
         public async Task<ApiResult> HealthCheckAsync()

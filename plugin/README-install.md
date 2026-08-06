@@ -1,6 +1,26 @@
-# MechForge 🏭 SolidWorks 插件安装说明
+# MechForge 🏭 SolidWorks AI 插件安装说明
 
-MechForge 是一个 SolidWorks 参数化设计插件，通过本地 HTTP API (localhost:5757) 与 Python 设计引擎通信，实现从自然语言到 3D 模型的自动化。
+MechForge 是一个带 **AI 对话能力**的 SolidWorks 参数化设计插件：
+- 💬 **AI 对话 Tab**：打开 SolidWorks 任务面板，直接和 AI 对话
+  - "设计一台离心风机 Q=5000 P=2500 n=1450"
+  - "DN100 PN16 平焊法兰"
+  - "做个轴流风机 Q=20000 P=800 n=1450"
+- 🤖 AI 自动理解需求 → 设计计算 → **自动在 SolidWorks 里建模**（无需手动运行宏）
+- 🛠 手动模式：填参数直接生成
+
+架构：
+```
+SolidWorks 任务面板 (C# 插件)
+    │  HTTP (localhost:5757)
+    ▼
+Python API 服务器 (api.py)
+    │  LLM (默认 DeepSeek，可换任意 OpenAI 兼容模型)
+    ▼
+设计引擎（法兰 / 离心叶轮 / 轴流风机 + 蜗壳）
+    │  生成 VBA 宏
+    ▼
+插件自动执行宏 → 模型直接出现在 SolidWorks ✅
+```
 
 ## 系统要求
 
@@ -11,31 +31,15 @@ MechForge 是一个 SolidWorks 参数化设计插件，通过本地 HTTP API (lo
 | Python | 3.10+ |
 | 操作系统 | Windows 10/11 x64 |
 
-## 文件结构
-
-```
-plugin/
-├── MechForgeAddin.csproj          # C# 项目文件 (.NET 4.8)
-├── MechForgeAddin.cs              # 插件主入口 (ISwAddin)
-├── TaskPaneControl.cs             # 任务面板逻辑
-├── TaskPaneControl.Designer.cs    # 任务面板布局
-├── ApiClient.cs                   # HTTP API 客户端
-├── SwApiHelper.cs                 # SolidWorks API 辅助
-├── install.ps1                    # 安装脚本
-└── README-install.md              # 本文件
-```
-
 ## 快速安装
 
-### Step 1: 启动 Python API 服务器
+### Step 1: 安装 Python 依赖并启动 API 服务器
 
 ```bash
 cd projects/solidworks-parametric
-
-# 安装依赖
 pip install -r requirements-plugin.txt
 
-# 启动 API 服务器
+# 启动 API 服务器（保持运行）
 python api.py --port 5757
 ```
 
@@ -46,7 +50,28 @@ MechForge API Server 🏭
 API Base:  http://127.0.0.1:5757/api
 ```
 
-### Step 2: 编译并注册插件
+### Step 2: 配置 AI 对话（可选，推荐）
+
+**方式一：插件内配置（推荐）**
+1. SolidWorks 里打开 MechForge 面板 → 「AI 对话」Tab → 点「⚙ 设置」
+2. 填入 DeepSeek API Key（[platform.deepseek.com](https://platform.deepseek.com) 获取）
+3. 保存即可，无需重启
+
+**方式二：手动配置文件**
+创建 `%APPDATA%\MechForge\config.json`：
+```json
+{"llm_api_key": "sk-你的key", "llm_api_url": "https://api.deepseek.com/v1/chat/completions", "llm_model": "deepseek-chat"}
+```
+
+**方式三：环境变量**
+```cmd
+set MECHFORGE_LLM_API_KEY=sk-你的key
+```
+
+> 💡 不配置也能用：自动降级为正则解析模式（能识别标准参数格式，但多轮对话体验弱）。
+> 💡 支持任意 OpenAI 兼容接口：改 `llm_api_url` + `llm_model` 即可（OpenAI / Qwen / 豆包 / Kimi 等）。
+
+### Step 3: 编译并注册插件
 
 **方法 A：使用安装脚本 (推荐)**
 
@@ -73,20 +98,23 @@ msbuild MechForgeAddin.csproj /p:Configuration=Release /p:Platform=x64
 regasm /codebase bin\x64\Release\MechForgeAddin.dll
 ```
 
-### Step 3: 在 SolidWorks 中加载插件
+### Step 4: 在 SolidWorks 中加载插件
 
 1. 启动/重启 SolidWorks
 2. 菜单栏 → **工具** → **插件**
 3. 弹出窗口中勾选 **MechForge Addin**
 4. SolidWorks 工具栏出现 **MechForge** 菜单
 
-### Step 4: 使用
+### Step 5: 使用 — 和 AI 对话
 
 1. 点击菜单栏 **MechForge** → **打开 MechForge 面板**
-2. 或者点击工具栏的 MechForge 图标
-3. 在任务面板中：
-   - **AI 模式**：输入自然语言点「生成」
-   - **手动模式**：选择零件类型，填写参数，点「生成」
+2. 默认打开「AI 对话 💬」Tab
+3. 直接输入需求，例如：
+   - `设计一台离心风机 Q=5000 P=2500 n=1450` → 自动建模叶轮 + 蜗壳
+   - `DN100 PN16 平焊法兰` → 自动建模法兰
+   - `做个轴流风机` → AI 会追问缺的参数
+   - `帮我设计一个压力5kPa、流量8000m³/h、转速2900的风机` → AI 自动换算单位
+4. AI 回复设计摘要后，**自动在 SolidWorks 中生成 3D 模型**
 
 ## 卸载
 
@@ -120,11 +148,21 @@ curl http://127.0.0.1:5757/api/health
 # 预期: {"success":true,"data":{"status":"ok","version":"1.0.0"}}
 ```
 
-### Q: 宏执行失败
+### Q: 自动建模失败 / 宏执行失败
 
 1. SolidWorks → **工具** → **宏** → **安全性**
 2. 将安全级别设为 **中** 或 **低**
 3. 如果已有数字签名，可设为 **高** 并添加受信任发布者
+
+### Q: 对话返回的内容是灰色（不是绿色）
+
+灰色表示当前用的是**正则降级模式**（未配置 LLM API Key）。
+点「⚙ 设置」填入 DeepSeek API Key 后，回复会变绿色（AI 模式）。
+
+### Q: AI 说设计失败 "不在国标数据库中"
+
+法兰有标准范围（GB/T 911X-2010），DN/PN 组合超出范围会提示。
+风机（Q/P/n）没有此限制。
 
 ### Q: RegAsm 权限不足
 
@@ -158,4 +196,25 @@ System.Diagnostics.Debug.WriteLine("[MechForge] 调试信息");
 
 ```bash
 python api.py --port 5757 --debug
+```
+
+## 文件结构
+
+```
+plugin/
+├── MechForgeAddin.csproj          # C# 项目文件 (.NET 4.8)
+├── MechForgeAddin.cs              # 插件主入口 (ISwAddin)
+├── TaskPaneControl.cs             # 任务面板逻辑（AI 对话 + 手动模式）
+├── TaskPaneControl.Designer.cs    # 任务面板布局
+├── SettingsDialog.cs              # AI 设置对话框（API Key 配置）
+├── ApiClient.cs                   # HTTP API 客户端（含 ChatAsync）
+├── SwApiHelper.cs                 # SolidWorks API 辅助（自动执行宏）
+├── install.ps1                    # 安装脚本
+└── README-install.md              # 本文件
+
+后端：
+├── api.py                         # Flask API 服务器 (localhost:5757)
+├── ai_chat.py                     # AI 对话引擎（意图识别 + 设计 + 宏生成）
+├── flange/  impeller/  axial/     # 设计引擎
+└── config.json                    # LLM 配置（可选，或放 %APPDATA%\MechForge\）
 ```

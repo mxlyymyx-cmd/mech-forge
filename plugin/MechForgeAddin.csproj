@@ -99,5 +99,6 @@
     <Compile Include="TaskPaneControl.Designer.cs" />
     <Compile Include="ApiClient.cs" />
     <Compile Include="SwApiHelper.cs" />
+    <Compile Include="SettingsDialog.cs" />
   </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-name: Build Plugin
+name: Build Plugin Installer
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
     paths:
       - "plugin/**"
       - ".github/workflows/plugin-build.yml"
+      - "api.py"
+      - "ai_chat.py"
+      - "requirements-plugin.txt"
   workflow_dispatch:
 
 jobs:
@@ -18,6 +21,11 @@ jobs:
 
       - name: 🛠 安装 Visual Studio Build Tools
         uses: microsoft/setup-msbuild@v2
+
+      - name: 🐍 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: 📦 安装 NuGet CLI
         uses: nuget/setup-nuget@v2
@@ -41,12 +49,10 @@ jobs:
             Write-Host "📥 下载: $($pkg.id) v$($pkg.version)"
             Invoke-WebRequest -Uri $url -OutFile "plugin\libs\$nupkg" -UseBasicParsing
             
-            # 解压 nupkg（其实是个 ZIP）
             $extractDir = "plugin\libs\$($pkg.id)"
             New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
             Expand-Archive -Path "plugin\libs\$nupkg" -DestinationPath $extractDir -Force
             
-            # 复制 DLL 到 libs/ 根目录
             $dllName = "$($pkg.id).dll"
             $dllPath = Join-Path $extractDir "lib\net451\$dllName"
             if (!(Test-Path $dllPath)) {
@@ -70,12 +76,10 @@ jobs:
               }
             }
             
-            # 清理
             Remove-Item "plugin\libs\$nupkg" -Force -ErrorAction SilentlyContinue
             Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
           }
           
-          # 验证
           Write-Host ""
           Write-Host "验证 DLL..."
           Get-ChildItem plugin\libs\*.dll | ForEach-Object {
@@ -99,18 +103,63 @@ jobs:
             exit 1
           }
 
-      - name: 📦 打包插件 ZIP
+      - name: 🐍 安装 Python 依赖
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path MechForge-Plugin-v1.0
-          Copy-Item plugin/bin/x64/Release/MechForgeAddin.dll -Destination MechForge-Plugin-v1.0/
-          Copy-Item plugin/install.ps1 -Destination MechForge-Plugin-v1.0/
-          Copy-Item plugin/README-install.md -Destination MechForge-Plugin-v1.0/
-          Compress-Archive -Path "MechForge-Plugin-v1.0/*" -DestinationPath MechForge-Plugin-win64.zip -Force
+          pip install -r requirements-plugin.txt
+          pip install pyinstaller
 
-      - name: 📤 上传构建产物
+      - name: 📦 打包 Python API 服务为独立 exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          # --onefile 单文件模式：用户无需安装 Python
+          pyinstaller --onefile --name MechForgeServer --clean --noconfirm `
+            --hidden-import flask --hidden-import flask_cors --hidden-import requests `
+            api.py
+          if (!(Test-Path "dist\MechForgeServer.exe")) {
+            Write-Host "❌ PyInstaller 打包失败"
+            exit 1
+          }
+          Write-Host "✅ MechForgeServer.exe 就绪: $((Get-Item 'dist\MechForgeServer.exe').Length / 1MB) MB"
+
+      - name: 📦 安装 Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y
+
+      - name: 🏗 构建安装程序
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            # 兼容 choco 安装的其他路径
+            $iscc = (Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" | Select-Object -First 1).FullName
+          }
+          Write-Host "使用 ISCC: $iscc"
+          & $iscc plugin\installer.iss
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ 安装包构建失败"
+            exit 1
+          }
+
+      - name: 📋 列出构建产物
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\* -Recurse | ForEach-Object { Write-Host "  📦 $($_.FullName) ($($_.Length / 1KB) KB)" }
+
+      - name: 📤 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: MechForge-Setup
+          path: dist\MechForge-Setup-*.exe
+          if-no-files-found: error
+
+      - name: 📤 上传插件 ZIP（保留原分发方式）
         uses: actions/upload-artifact@v4
         with:
           name: MechForge-Plugin-win64
-          path: MechForge-Plugin-win64.zip
-          if-no-files-found: error
+          path: |
+            plugin\bin\x64\Release\MechForgeAddin.dll
+            plugin\install.ps1
+            plugin\README-install.md
+          if-no-files-found: warn

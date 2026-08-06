@@ -43,6 +43,9 @@ from axial.generator import (
     design_and_generate as axial_design_and_generate,
 )
 
+# ── AI 聊天引擎 ──
+from ai_chat import chat as ai_chat, is_llm_configured, get_llm_settings
+
 # ═══════════════════════════════════════════════════════════════
 # Flask App
 # ═══════════════════════════════════════════════════════════════
@@ -152,6 +155,49 @@ def list_models():
 # ═══════════════════════════════════════════════════════════════
 # NLP — 自然语言 → 结构化参数
 # ═══════════════════════════════════════════════════════════════
+
+
+@app.route("/api/chat", methods=["POST"])
+def chat_endpoint():
+    """
+    AI 多轮对话 — 意图识别 + 参数提取 + 设计计算 + 生成宏
+
+    请求体:
+        {"messages": [{"role": "user", "content": "设计一台离心风机 Q=5000 P=2500 n=1450"}, ...]}
+
+    返回:
+        {"success": true, "data": {
+            "reply": "...", "action": "build|ask|chat", "type": "...",
+            "params": {...}, "summary": "...",
+            "macro": "...", "name": "...",
+            "extra_macro": "...", "extra_name": "...",
+            "llm": true/false
+        }}
+    """
+    data = request.get_json(force=True)
+    messages = data.get("messages", [])
+
+    if not messages:
+        return fail("messages 不能为空", "EMPTY_INPUT")
+
+    log.info(f"POST /api/chat  msgs={len(messages)}  last={messages[-1].get('content', '')[:80]}")
+
+    try:
+        result = ai_chat(messages)
+        return ok(result)
+    except Exception as e:
+        return server_error(e)
+
+
+@app.route("/api/chat/config", methods=["GET"])
+def chat_config():
+    """查询 LLM 配置状态（不返回 key 本身）"""
+    settings = get_llm_settings()
+    return ok({
+        "configured": bool(settings["api_key"]),
+        "model": settings["model"],
+        "api_url": settings["api_url"],
+    })
 
 
 @app.route("/api/nlp", methods=["POST"])
@@ -628,6 +674,8 @@ def main():
   Endpoints:
     GET  /api/health          — 健康检查
     GET  /api/models          — 支持的零件类型
+    POST /api/chat            — AI 多轮对话（意图→设计→宏）
+    GET  /api/chat/config     — LLM 配置状态
     POST /api/nlp             — 自然语言 → 结构化参数
     POST /api/design/flange   — 法兰设计计算
     POST /api/design/impeller — 离心风机叶轮设计

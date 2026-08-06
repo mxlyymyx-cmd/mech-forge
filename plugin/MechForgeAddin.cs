@@ -37,8 +37,10 @@ namespace MechForge
         /// <summary>
         /// 连接插件。在 SolidWorks 装载插件时自动调用。
         /// </summary>
+        /// <param name="ThisSW">SolidWorks 应用对象</param>
+        /// <param name="Cookie">插件 ID</param>
         /// <returns>连接是否成功</returns>
-        public bool Connect()
+        public bool ConnectToSW(object ThisSW, int Cookie)
         {
             try
             {
@@ -71,7 +73,7 @@ namespace MechForge
         /// 断开插件。在 SolidWorks 卸载插件时自动调用。
         /// </summary>
         /// <returns>断开是否成功</returns>
-        public bool Disconnect()
+        public bool DisconnectFromSW()
         {
             try
             {

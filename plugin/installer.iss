@@ -35,7 +35,7 @@ WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 UninstallDisplayIcon={app}\{#MyServerExeName}
-VersionInfoVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}.0
 VersionInfoDescription=MechForge SolidWorks AI Plugin
 
 [Languages]

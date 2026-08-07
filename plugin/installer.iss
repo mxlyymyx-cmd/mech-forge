@@ -74,7 +74,7 @@ Filename: "{dotnet4032}\RegAsm.exe"; Parameters: "/codebase ""{app}\{#MyAppExeNa
 Filename: "{app}\{#MyServerExeName}"; Description: "启动 MechForge AI 服务"; Flags: nowait postinstall skipifsilent
 
 ; ── 打开说明文档 ──
-Filename: "{app}\README-install.md"; Description: "查看使用说明"; Flags: postinstall nowait skipifsilent shellexec unchecked
+Filename: "{app}\README-install.md"; Description: "查看使用说明"; Flags: postinstall nowait skipifsilent shellexec
 
 [Icons]
 Name: "{group}\启动 MechForge AI 服务"; Filename: "{app}\{#MyServerExeName}"

@@ -253,7 +253,7 @@ namespace MechForge
         #region 错误处理
 
         /// <summary>
-        /// 获取 SolidWorks 最后一次错误码。
+        /// 获取 SolidWorks 最后一次错误码（通过 GetLastError 不可用时的兜底）。
         /// </summary>
         public static string GetLastError()
         {
@@ -261,7 +261,7 @@ namespace MechForge
             {
                 var app = GetSwApp();
                 if (app == null) return "SolidWorks not available";
-                return "ErrorCode=" + app.LastError;
+                return "LastError unavailable (use debugger) — app=" + (app.Visible ? "visible" : "hidden");
             }
             catch (Exception ex)
             {

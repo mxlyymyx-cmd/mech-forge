@@ -112,12 +112,13 @@ namespace MechForge
                 if (app == null) return null;
 
                 int docType = (int)swDocumentTypes_e.swDocPART;
-                string template = app.GetDocumentTemplate(docType, 0, 0, 0);
+                // 现代 API：GetDocumentTemplate(Mode, TemplateName, PaperSize, Width, Height)
+                string template = app.GetDocumentTemplate(docType, "", 0, 0, 0);
 
                 if (string.IsNullOrEmpty(template))
                 {
                     // 尝试默认模板路径
-                    string swPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+                    string swPath = System.Environment.GetFolderPath(System.Environment.SpecialFolder.ProgramFiles);
                     template = Path.Combine(swPath,
                         "SolidWorks Corp", "SolidWorks",
                         "lang", "chinese-simplified",
@@ -145,9 +146,6 @@ namespace MechForge
                 var doc = GetActiveDoc();
                 if (doc == null) return false;
 
-                int errors = 0;
-                int warnings = 0;
-
                 if (!string.IsNullOrEmpty(filePath))
                 {
                     string dir = Path.GetDirectoryName(filePath);
@@ -156,12 +154,17 @@ namespace MechForge
                         Directory.CreateDirectory(dir);
                     }
 
-                    return doc.SaveAs(filePath, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
-                        (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref errors, ref warnings);
+                    // 现代 API：SaveAs3(NewName, SaveAsVersion, Options)
+                    int result = doc.SaveAs3(
+                        filePath,
+                        (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
+                        (int)swSaveAsOptions_e.swSaveAsOptions_Silent);
+                    return result == 0;
                 }
                 else
                 {
-                    return doc.Save(ref errors, ref warnings);
+                    // 现代 API：Save2(Silent) 返回错误码，0 = 成功
+                    return doc.Save2(true) == 0;
                 }
             }
             catch (Exception ex)
@@ -203,14 +206,19 @@ namespace MechForge
 
                 File.WriteAllText(tempPath, code, System.Text.Encoding.UTF8);
 
-                // 执行宏
-                // 注意: SolidWorks 对宏的执行可能受宏安全设置影响
-                bool result = app.RunMacro2(tempPath, "Module1", "main",
-                    (int)swRunMacroOption_e.swRunMacroOptionUnloadAfterRun);
+                // 现代 API：RunMacro2(FilePath, Module, Proc, Options, out Error)
+                int macroError = 0;
+                bool result = app.RunMacro2(
+                    tempPath,
+                    "Module1",
+                    "main",
+                    (int)swRunMacroOption_e.swRunMacroUnloadAfterRun,
+                    out macroError);
 
                 if (!result)
                 {
-                    System.Diagnostics.Debug.WriteLine("[SwApiHelper] RunMacro returned false. " +
+                    System.Diagnostics.Debug.WriteLine(
+                        "[SwApiHelper] RunMacro returned false (error " + macroError + "). " +
                         "Check SW macro security settings (Tools → Macro → Security)");
                 }
 
@@ -245,7 +253,7 @@ namespace MechForge
         #region 错误处理
 
         /// <summary>
-        /// 获取 SolidWorks 最后一次错误信息。
+        /// 获取 SolidWorks 最后一次错误码。
         /// </summary>
         public static string GetLastError()
         {
@@ -253,7 +261,7 @@ namespace MechForge
             {
                 var app = GetSwApp();
                 if (app == null) return "SolidWorks not available";
-                return app.GetLastError;
+                return "ErrorCode=" + app.LastError;
             }
             catch (Exception ex)
             {

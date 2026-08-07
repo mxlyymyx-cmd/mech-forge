@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -17,6 +18,9 @@ namespace MechForge
     /// - 日志输出框
     /// - 底部状态栏
     /// </summary>
+    [ComVisible(true)]
+    [ProgId("MechForge.TaskPaneControl")]
+    [Guid("A1B2C3D4-E5F6-7890-ABCD-EF1234567892")]
     public partial class TaskPaneControl : UserControl
     {
         #region 字段

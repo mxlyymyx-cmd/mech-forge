@@ -11,7 +11,7 @@ namespace MechForge
     /// 
     /// 注册方式（管理员终端）：
     ///   regasm /codebase MechForgeAddin.dll
-    ///   或在安装时由 install.ps1 自动注册。
+    ///   或在安装时由安装程序自动注册。
     /// </summary>
     [Guid("A1B2C3D4-E5F6-7890-ABCD-EF1234567891")]
     [ComVisible(true)]
@@ -23,19 +23,18 @@ namespace MechForge
         private SldWorks _swApp;
         private int _addinId;
         private TaskPaneControl _taskPane;
-        private object _taskPaneRef;
+        private TaskpaneView _taskPaneView;
         private bool _connected = false;
 
-        // 工具栏命令 ID
+        // 命令 ID
         private const int CMD_OPEN_PANEL = 1;
-        private const int CMD_ABOUT = 2;
 
         #endregion
 
         #region ISwAddin 实现
 
         /// <summary>
-        /// 连接插件。在 SolidWorks 装载插件时自动调用。
+        /// 连接插件。SolidWorks 装载插件时自动调用。
         /// </summary>
         /// <param name="ThisSW">SolidWorks 应用对象</param>
         /// <param name="Cookie">插件 ID</param>
@@ -44,19 +43,10 @@ namespace MechForge
         {
             try
             {
-                _swApp = (SldWorks)Application.SldWorks;
-                _addinId = _swApp.GetAddInID();
+                _swApp = (SldWorks)ThisSW;
+                _addinId = Cookie;
 
-                if (_addinId <= 0)
-                {
-                    // 尝试从 AddInID 注册表中获取
-                    _addinId = _swApp.SetAddinCallbackInfo(0, this, (int)AddInUserCommandConstants.swCommands_Activate);
-                }
-
-                // 注册工具栏按钮和菜单
-                RegisterToolbar();
-
-                // 创建任务面板
+                // 创建任务面板（核心 UI：AI 对话 + 手动模式）
                 CreateTaskPane();
 
                 _connected = true;
@@ -70,20 +60,15 @@ namespace MechForge
         }
 
         /// <summary>
-        /// 断开插件。在 SolidWorks 卸载插件时自动调用。
+        /// 断开插件。SolidWorks 卸载插件时自动调用。
         /// </summary>
         /// <returns>断开是否成功</returns>
         public bool DisconnectFromSW()
         {
             try
             {
-                // 移除任务面板
                 RemoveTaskPane();
 
-                // 移除工具栏
-                RemoveToolbar();
-
-                // 清理资源
                 _taskPane?.Dispose();
                 _taskPane = null;
                 _swApp = null;
@@ -100,104 +85,33 @@ namespace MechForge
 
         #endregion
 
-        #region 工具栏注册
-
-        /// <summary>
-        /// 注册自定义工具栏按钮和菜单项。
-        /// </summary>
-        private void RegisterToolbar()
-        {
-            try
-            {
-                // 使用位图资源（16x16 和 24x24）：实际应用中需嵌入 .bmp 或 .png）
-                string title = "MechForge";
-                string tooltip = "MechForge 参数化设计";
-
-                // 注册命令组（cmdGroupIndex, title, tooltip, 
-                //              hint, docTypes, DocHasCmd, 
-                //              cmdID0, cmdID1, ...）
-                int cmdGroupIndex = -1;
-                object[] registryIDs = new object[] { CMD_OPEN_PANEL };
-                object[] docTypes = new object[] { (int)swDocumentTypes_e.swDocPART,
-                                                    (int)swDocumentTypes_e.swDocASSEMBLY };
-
-                bool registered = _swApp.AddCommandGroup(
-                    _addinId,
-                    title,
-                    tooltip,
-                    tooltip,
-                    -1,                                     // bmp icon index (use -1 for no icon)
-                    ref registryIDs,
-                    ref registryIDs,
-                    ref docTypes,
-                    ref cmdGroupIndex
-                );
-
-                if (registered)
-                {
-                    // 注册命令回调
-                    _swApp.SetCommandGroupCallback(cmdGroupIndex, this);
-                }
-
-                // 添加菜单
-                int[] cmdIDs = new int[] { CMD_OPEN_PANEL };
-                string[] menuNames = new string[] { "打开 MechForge 面板" };
-                string[] menuHints = new string[] { "打开 MechForge 参数化设计面板" };
-                bool menuRegistered = _swApp.AddMenu(
-                    _addinId,
-                    "MechForge(&M)",
-                    -1,             // 菜单索引 (-1 = 末尾)
-                    ref menuNames,
-                    ref menuHints,
-                    ref cmdIDs,
-                    ref cmdGroupIndex
-                );
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("[MechForge] RegisterToolbar failed: " + ex.Message);
-            }
-        }
-
-        /// <summary>
-        /// 移除自定义工具栏。
-        /// </summary>
-        private void RemoveToolbar()
-        {
-            try
-            {
-                _swApp?.RemoveCommandGroup(_addinId);
-            }
-            catch
-            {
-                // 忽略清理时的异常
-            }
-        }
-
-        #endregion
-
         #region 任务面板管理
 
         /// <summary>
         /// 创建任务面板（Task Pane）。
+        /// 使用现代 API：CreateTaskpaneView2 + AddControl。
         /// </summary>
         private void CreateTaskPane()
         {
             try
             {
                 _taskPane = new TaskPaneControl();
-                _taskPaneRef = _taskPane;
 
-                // 将 TaskPane 注册为 COM 可见并添加到 SolidWorks 任务窗格
-                int taskPaneId = _swApp.AddTaskpaneView2(
-                    _taskPaneRef,
-                    "MechForge 🏭",
-                    "{A1B2C3D4-E5F6-7890-ABCD-EF1234567892}"
-                );
-
-                if (taskPaneId < 0)
+                // 现代 API：创建任务窗格视图（空位图 + 提示）
+                _taskPaneView = _swApp.CreateTaskpaneView2("", "MechForge 🏭");
+                if (_taskPaneView == null)
                 {
-                    System.Diagnostics.Debug.WriteLine("[MechForge] TaskPane creation returned negative ID: " + taskPaneId);
+                    System.Diagnostics.Debug.WriteLine("[MechForge] CreateTaskpaneView2 returned null");
+                    return;
+                }
+
+                // 将 UserControl 挂到任务窗格（需 TaskPaneControl 为 COM 可见）
+                object control = _taskPaneView.AddControl(
+                    "MechForge.TaskPaneControl",
+                    "");
+                if (control == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("[MechForge] AddControl returned null");
                 }
             }
             catch (Exception ex)
@@ -213,48 +127,15 @@ namespace MechForge
         {
             try
             {
-                if (_taskPaneRef != null && _swApp != null)
+                if (_taskPaneView != null)
                 {
-                    _swApp.RemoveTaskpaneView(_taskPaneRef);
-                }
-            }
-            catch
-            {
-                // 忽略清理时的异常
-            }
-        }
-
-        #endregion
-
-        #region 命令回调
-
-        /// <summary>
-        /// 处理 SolidWorks 命令回调。
-        /// </summary>
-        public void OnCommand(int command)
-        {
-            try
-            {
-                switch (command)
-                {
-                    case CMD_OPEN_PANEL:
-                        // 已有 TaskPane 时无需额外操作
-                        System.Diagnostics.Debug.WriteLine("[MechForge] Command: Open Panel");
-                        break;
-
-                    case CMD_ABOUT:
-                        System.Windows.Forms.MessageBox.Show(
-                            "MechForge v1.0.0\n参数化设计插件\n基于 HTTP API (localhost:5757)",
-                            "关于 MechForge",
-                            System.Windows.Forms.MessageBoxButtons.OK,
-                            System.Windows.Forms.MessageBoxIcon.Information
-                        );
-                        break;
+                    _taskPaneView.DeleteView();
+                    _taskPaneView = null;
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("[MechForge] OnCommand error: " + ex.Message);
+                System.Diagnostics.Debug.WriteLine("[MechForge] RemoveTaskPane failed: " + ex.Message);
             }
         }
 
@@ -269,7 +150,6 @@ namespace MechForge
         public static void RegisterFunction(Type t)
         {
             // RegAsm 自动处理注册表项
-            // 如需自定义注册表，可在此添加
         }
 
         /// <summary>

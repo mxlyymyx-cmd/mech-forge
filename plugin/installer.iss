@@ -1,4 +1,4 @@
-; ─────────────────────────────────────────────────────────────
+﻿; ─────────────────────────────────────────────────────────────
 ;  MechForge 🏭 SolidWorks AI 插件 — 安装程序
 ;  Inno Setup 6 脚本
 ;  双击安装 → 自动注册 COM + 写入 SolidWorks AddIns 注册表
@@ -44,7 +44,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式:"; Flags: unchecked
-Name: "autostart"; Description: "开机自动启动 MechForge AI 服务"; GroupDescription: "服务:"; Flags: checked
+Name: "autostart"; Description: "开机自动启动 MechForge AI 服务"; GroupDescription: "服务:"
 
 [Files]
 ; 预编译的插件 DLL（由 GitHub Actions 编译）

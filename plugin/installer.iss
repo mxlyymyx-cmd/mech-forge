@@ -1,4 +1,4 @@
-﻿; ─────────────────────────────────────────────────────────────
+﻿﻿; ─────────────────────────────────────────────────────────────
 ;  MechForge 🏭 SolidWorks AI 插件 — 安装程序
 ;  Inno Setup 6 脚本
 ;  双击安装 → 自动注册 COM + 写入 SolidWorks AddIns 注册表
@@ -56,11 +56,11 @@ Source: "README-install.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 
 [Registry]
 ; ── SolidWorks 插件注册表（SolidWorks 靠这个识别插件）──
-Root: HKLM; Subkey: "SOFTWARE\SolidWorks\AddIns\{#PluginGUID}"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletekey
-Root: HKLM; Subkey: "SOFTWARE\SolidWorks\AddIns\{#PluginGUID}"; ValueType: dword; ValueName: "LoadAtStartup"; ValueData: 1; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\SolidWorks\AddIns\{{A1B2C3D4-E5F6-7890-ABCD-EF1234567891}}"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\SolidWorks\AddIns\{{A1B2C3D4-E5F6-7890-ABCD-EF1234567891}}"; ValueType: dword; ValueName: "LoadAtStartup"; ValueData: 1; Flags: uninsdeletekey
 ; 64 位视图注册（SolidWorks 2022+ 是 64 位）
-Root: HKLM64; Subkey: "SOFTWARE\SolidWorks\AddIns\{#PluginGUID}"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletekey
-Root: HKLM64; Subkey: "SOFTWARE\SolidWorks\AddIns\{#PluginGUID}"; ValueType: dword; ValueName: "LoadAtStartup"; ValueData: 1; Flags: uninsdeletekey
+Root: HKLM64; Subkey: "SOFTWARE\SolidWorks\AddIns\{{A1B2C3D4-E5F6-7890-ABCD-EF1234567891}}"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletekey
+Root: HKLM64; Subkey: "SOFTWARE\SolidWorks\AddIns\{{A1B2C3D4-E5F6-7890-ABCD-EF1234567891}}"; ValueType: dword; ValueName: "LoadAtStartup"; ValueData: 1; Flags: uninsdeletekey
 
 ; ── 开机自启 API 服务 ──
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "MechForgeServer"; ValueData: """{app}\{#MyServerExeName}"""; Flags: uninsdeletevalue; Tasks: autostart

@@ -39,7 +39,7 @@ VersionInfoVersion={#MyAppVersion}.0
 VersionInfoDescription=MechForge SolidWorks AI Plugin
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "chinesesimplified"; MessagesFile: "langs\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
